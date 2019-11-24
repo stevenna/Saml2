@@ -6,9 +6,9 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.IdentityModel.Metadata;
 using Sustainsys.Saml2.Configuration;
 using System.Xml;
+using Sustainsys.Saml2.Metadata;
 
 namespace Sustainsys.Saml2.WebSso
 {
@@ -105,7 +105,11 @@ namespace Sustainsys.Saml2.WebSso
 
             options.SPOptions.Logger.WriteVerbose("Calling idp " + idp.EntityId.Id + " to resolve artifact\n" + artifact);
 
-            var response = Saml2SoapBinding.SendSoapRequest(payload, arsUri);
+            var clientCertificates = options.SPOptions.ServiceCertificates
+                .Where(sc => sc.Use.HasFlag(CertificateUse.TlsClient) && sc.Status == CertificateStatus.Current)
+                .Select(sc => sc.Certificate);
+
+            var response = Saml2SoapBinding.SendSoapRequest(payload, arsUri, clientCertificates);
 
             options.SPOptions.Logger.WriteVerbose("Artifact resolved returned\n" + response);
 
@@ -119,7 +123,7 @@ namespace Sustainsys.Saml2.WebSso
         {
             if(storedRequestState != null)
             {
-                return options.IdentityProviders[storedRequestState.Idp];
+                return options.Notifications.GetIdentityProvider(storedRequestState.Idp, storedRequestState.RelayData, options);
             }
 
             // It is RECOMMENDED in the spec that the first part of the artifact

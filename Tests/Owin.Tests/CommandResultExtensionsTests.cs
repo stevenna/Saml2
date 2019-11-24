@@ -1,15 +1,15 @@
-﻿using System;
+﻿using FluentAssertions;
+using Microsoft.IdentityModel.Tokens.Saml2;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Sustainsys.Saml2.Metadata;
+using Sustainsys.Saml2.WebSso;
+using System;
 using System.IO;
 using System.Net;
-using Sustainsys.Saml2.WebSso;
-using FluentAssertions;
-using System.IdentityModel.Metadata;
-using System.IdentityModel.Tokens;
 
 namespace Sustainsys.Saml2.Owin.Tests
 {
-    [TestClass]
+	[TestClass]
     public class CommandResultExtensionsTests
     {
         [TestMethod]
@@ -17,7 +17,7 @@ namespace Sustainsys.Saml2.Owin.Tests
         {
             Action a = () => ((CommandResult)null).Apply(OwinTestHelpers.CreateOwinContext(), null);
 
-            a.ShouldThrow<ArgumentNullException>().And.ParamName.Should().Be("commandResult");
+            a.Should().Throw<ArgumentNullException>().And.ParamName.Should().Be("commandResult");
         }
 
         [TestMethod]
@@ -25,7 +25,7 @@ namespace Sustainsys.Saml2.Owin.Tests
         {
             Action a = () => new CommandResult().Apply(context:null, dataProtector:null);
 
-            a.ShouldThrow<ArgumentNullException>().And.ParamName.Should().Be("context");
+            a.Should().Throw<ArgumentNullException>().And.ParamName.Should().Be("context");
         }
 
         [TestMethod]
@@ -141,6 +141,19 @@ namespace Sustainsys.Saml2.Owin.Tests
 
             context.Response.StatusCode.Should().Be(303);
             context.Response.Headers["Location"].Should().Be(redirectUrl);
+        }
+
+        [TestMethod]
+        public void CommandResult_Apply_Headers()
+        {
+            var cr = new CommandResult();
+            cr.Headers.Add("header", "value");
+
+            var context = OwinTestHelpers.CreateOwinContext();
+
+            cr.Apply(context, null);
+
+            context.Response.Headers["header"].Should().Be("value");
         }
     }
 }

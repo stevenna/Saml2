@@ -1,4 +1,5 @@
 ﻿using Sustainsys.Saml2.Configuration;
+using Sustainsys.Saml2.Metadata;
 using Sustainsys.Saml2.WebSso;
 using Microsoft.Owin;
 using Microsoft.Owin.Infrastructure;
@@ -6,7 +7,6 @@ using Microsoft.Owin.Security;
 using Microsoft.Owin.Security.Infrastructure;
 using System;
 using System.Collections.Generic;
-using System.IdentityModel.Metadata;
 using System.Linq;
 using System.Security.Claims;
 using System.Text;
@@ -60,12 +60,10 @@ namespace Sustainsys.Saml2.Owin
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Naming", "CA2204:Literals should be spelled correctly", MessageId = "ReturnUrl")]
         private AuthenticationTicket CreateErrorAuthenticationTicket(HttpRequestData httpRequestData, Exception ex)
         {
-            AuthenticationProperties authProperties = null;
-            if (httpRequestData.StoredRequestState != null)
-            {
-                authProperties = new AuthenticationProperties(
-                    httpRequestData.StoredRequestState.RelayData);
+            var authProperties = new AuthenticationProperties();
 
+            if (httpRequestData.StoredRequestState?.ReturnUrl != null)
+            {
                 // ReturnUrl is removed from AuthProps dictionary to save space, need to put it back.
                 authProperties.RedirectUri = httpRequestData.StoredRequestState.ReturnUrl.OriginalString;
             }
@@ -83,10 +81,7 @@ namespace Sustainsys.Saml2.Owin
 
                     redirectUrl = httpRequestData.ApplicationUrl;
                 }
-                authProperties = new AuthenticationProperties
-                {
-                    RedirectUri = redirectUrl.OriginalString
-                };
+                authProperties.RedirectUri = redirectUrl.OriginalString;
             }
 
             // The Google middleware adds this, so let's follow that example.
@@ -127,7 +122,7 @@ namespace Sustainsys.Saml2.Owin
                     // Don't serialize the RedirectUri twice.
                     challenge.Properties.RedirectUri = null;
 
-                    if (redirectUri == null && Options.AuthenticationMode == AuthenticationMode.Active)
+                    if (redirectUri == null)
                     {
                         redirectUri = Context.Request.Uri.ToString();
                     }

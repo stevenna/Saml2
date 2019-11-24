@@ -1,11 +1,10 @@
 ﻿using Sustainsys.Saml2.Configuration;
 using Sustainsys.Saml2.Metadata;
+using Sustainsys.Saml2.Tokens;
 using Sustainsys.Saml2.WebSso;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.IdentityModel.Metadata;
-using System.IdentityModel.Selectors;
 using System.Linq;
 using System.Security.Claims;
 using System.Text;
@@ -29,27 +28,22 @@ namespace Sustainsys.Saml2.TestHelpers
         {
             var org = new Organization();
 
-            org.Names.Add(new LocalizedName("Sustainsys.Saml2", CultureInfo.InvariantCulture));
-            org.DisplayNames.Add(new LocalizedName("Sustainsys Saml2", CultureInfo.InvariantCulture));
+            org.Names.Add(new LocalizedName("Sustainsys.Saml2", "en"));
+            org.DisplayNames.Add(new LocalizedName("Sustainsys Saml2", "en"));
             org.Urls.Add(new LocalizedUri(
-                new Uri("http://github.com/SustainsysIT/Saml2"),
-                CultureInfo.InvariantCulture));
+                new Uri("http://github.com/Sustainsys/Saml2"),
+				"en"));
 
             var options = new SPOptions
             {
-                EntityId = new EntityId("https://github.com/SustainsysIT/Saml2"),
-                MetadataCacheDuration = new TimeSpan(0, 0, 42),
+                EntityId = new EntityId("https://github.com/Sustainsys/Saml2"),
+                MetadataCacheDuration = new XsdDuration(seconds: 42),
                 MetadataValidDuration = TimeSpan.FromDays(24),
                 WantAssertionsSigned = true,
                 Organization = org,
                 DiscoveryServiceUrl = new Uri("https://ds.example.com"),
                 ReturnUrl = new Uri("https://localhost/returnUrl")
             };
-
-            options.SystemIdentityModelIdentityConfiguration.ClaimsAuthenticationManager
-                = new ClaimsAuthenticationManagerStub();
-            options.SystemIdentityModelIdentityConfiguration.AudienceRestriction.AudienceMode
-                = AudienceUriMode.Never;
 
             AddContacts(options);
             AddAttributeConsumingServices(options);
@@ -77,12 +71,17 @@ namespace Sustainsys.Saml2.TestHelpers
             a1.Values.Add("value1");
             a1.Values.Add("value2");
 
-            var a2 = new RequestedAttribute("someName");
+			var a2 = new RequestedAttribute("someName")
+			{
+				IsRequired = false
+			};
 
-            var acs = new AttributeConsumingService("attributeServiceName")
+            var acs = new AttributeConsumingService
             {
                 IsDefault = true
             };
+			acs.ServiceNames.Add(new LocalizedName(
+				"attributeServiceName", "en"));
             acs.RequestedAttributes.Add(a1);
             acs.RequestedAttributes.Add(a2);
 

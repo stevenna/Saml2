@@ -1,7 +1,6 @@
 ﻿using Sustainsys.Saml2.WebSso;
 using System;
 using System.Configuration;
-using System.Data.Odbc;
 using Sustainsys.Saml2.Saml2P;
 
 namespace Sustainsys.Saml2.Configuration
@@ -217,6 +216,23 @@ namespace Sustainsys.Saml2.Configuration
             set
             {
                 base[disableOutboundLogoutRequests] = value;
+            }
+        }
+
+        /// <summary>
+        /// Indicates that the IDP sends the return url as part of the RelayState.
+        /// This is used when <see cref="AllowUnsolicitedAuthnResponse"/> is enabled.
+        /// </summary>
+        [ConfigurationProperty("relayStateUsedAsReturnUrl", IsRequired = false, DefaultValue = false)]
+        public bool RelayStateUsedAsReturnUrl
+        {
+            get
+            {
+                return (bool)base["relayStateUsedAsReturnUrl"];
+            }
+            set
+            {
+                base["relayStateUsedAsReturnUrl"] = value;
             }
         }
     }

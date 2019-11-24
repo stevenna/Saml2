@@ -1,14 +1,14 @@
 ﻿using FluentAssertions;
 using Sustainsys.Saml2;
+using Sustainsys.Saml2.Metadata;
 using Sustainsys.Saml2.WebSso;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
+using Microsoft.IdentityModel.Tokens.Saml2;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NSubstitute;
 using System;
 using System.Collections.Generic;
-using System.IdentityModel.Metadata;
-using System.IdentityModel.Tokens;
 using System.IO;
 using System.Linq;
 using System.Security.Claims;
@@ -35,7 +35,7 @@ namespace Sustainsys.Saml2.AspNetCore2.Tests
                     { "Key2", "value2" }
                 });
 
-            var redirectLocation = "https://destination.com";
+            var redirectLocation = "https://destination.com/?q=http%3A%2F%2Fexample.com";
             var commandResult = new CommandResult()
             {
                 HttpStatusCode = System.Net.HttpStatusCode.Redirect,
@@ -56,6 +56,8 @@ namespace Sustainsys.Saml2.AspNetCore2.Tests
                 }
             };
 
+            commandResult.Headers.Add("header", "value");
+
             ClaimsPrincipal principal = null;
             AuthenticationProperties authProps = null;
             var authService = Substitute.For<IAuthenticationService>();
@@ -74,11 +76,13 @@ namespace Sustainsys.Saml2.AspNetCore2.Tests
 
             context.Response.StatusCode.Should().Be(302);
             context.Response.Headers["Location"].SingleOrDefault()
-                .Should().Be("https://destination.com/", "location header should be set");
+                .Should().Be(redirectLocation, "location header should be set");
             context.Response.Cookies.Received().Append(
                 "Saml2.123", expectedCookieData, Arg.Is<CookieOptions>(co => co.HttpOnly && co.SameSite == SameSiteMode.None));
 
             context.Response.Cookies.Received().Delete("Clear-Cookie");
+
+            context.Response.Headers.Received().Add("header", "value");
 
             context.Response.ContentType
                 .Should().Be("application/json", "content type should be set");

@@ -4,9 +4,6 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.IdentityModel.Configuration;
-using System.IdentityModel.Metadata;
-using System.IdentityModel.Services.Configuration;
 using System.Linq;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -25,8 +22,7 @@ namespace Sustainsys.Saml2.Configuration
         /// </summary>
         public SPOptions()
         {
-            systemIdentityModelIdentityConfiguration = new IdentityConfiguration(false);
-            MetadataCacheDuration = new TimeSpan(1, 0, 0);
+			MetadataCacheDuration = new XsdDuration(hours: 1);
             Compatibility = new Compatibility();
             OutboundSigningAlgorithm = XmlHelpers.GetDefaultSigningAlgorithmName();
             MinIncomingSigningAlgorithm = XmlHelpers.GetDefaultSigningAlgorithmName();
@@ -42,7 +38,6 @@ namespace Sustainsys.Saml2.Configuration
             {
                 throw new ArgumentNullException(nameof(configSection));
             }
-            systemIdentityModelIdentityConfiguration = new IdentityConfiguration(true);
 
             ReturnUrl = configSection.ReturnUrl;
             MetadataCacheDuration = configSection.Metadata.CacheDuration;
@@ -85,7 +80,7 @@ namespace Sustainsys.Saml2.Configuration
         /// Recommendation of cache refresh interval to those who reads our
         /// metadata.
         /// </summary>
-        public TimeSpan MetadataCacheDuration { get; set; }
+        public XsdDuration MetadataCacheDuration { get; set; }
 
         /// <summary>
         /// Maximum validity duration after fetch for those who reads our
@@ -216,7 +211,8 @@ namespace Sustainsys.Saml2.Configuration
             }
         }
 
-        readonly ICollection<AttributeConsumingService> attributeConsumingServices = new List<AttributeConsumingService>();
+        readonly ICollection<AttributeConsumingService> attributeConsumingServices
+			= new List<AttributeConsumingService>();
 
         /// <summary>
         /// Collection of attribute consuming services for the service provider.
@@ -226,19 +222,6 @@ namespace Sustainsys.Saml2.Configuration
             get
             {
                 return attributeConsumingServices;
-            }
-        }
-
-        private IdentityConfiguration systemIdentityModelIdentityConfiguration;
-
-        /// <summary>
-        /// The System.IdentityModel configuration to use.
-        /// </summary>
-        public IdentityConfiguration SystemIdentityModelIdentityConfiguration
-        {
-            get
-            {
-                return systemIdentityModelIdentityConfiguration;
             }
         }
 
@@ -263,7 +246,7 @@ namespace Sustainsys.Saml2.Configuration
             get
             {
                 var decryptionCertificates = ServiceCertificates
-                    .Where(c => c.Use == CertificateUse.Encryption || c.Use == CertificateUse.Both)
+                    .Where(c => c.Use.HasFlag(CertificateUse.Encryption) || c.Use == CertificateUse.Both)
                     .Select(c => c.Certificate);
 
                 return decryptionCertificates.ToList().AsReadOnly();
@@ -279,7 +262,7 @@ namespace Sustainsys.Saml2.Configuration
             {
                 var signingCertificates = ServiceCertificates
                     .Where(c => c.Status == CertificateStatus.Current)
-                    .Where(c => c.Use == CertificateUse.Signing || c.Use == CertificateUse.Both)
+                    .Where(c => c.Use.HasFlag(CertificateUse.Signing) || c.Use == CertificateUse.Both)
                     .Select(c => c.Certificate);
 
                 return signingCertificates.FirstOrDefault();
@@ -293,10 +276,10 @@ namespace Sustainsys.Saml2.Configuration
         {
             get
             {
-                var futureEncryptionCertExists = publishableServiceCertificates
+                var futureEncryptionCertExists = PublishableServiceCertificates
                     .Any(c => c.Status == CertificateStatus.Future && (c.Use == CertificateUse.Encryption || c.Use == CertificateUse.Both));
 
-                var metaDataCertificates = publishableServiceCertificates
+                var metaDataCertificates = PublishableServiceCertificates
                     .Where(
                         // Signing & "Both" certs always get published because we want Idp's to be aware of upcoming keys
                         c => c.Status == CertificateStatus.Future || c.Use != CertificateUse.Encryption
@@ -304,14 +287,7 @@ namespace Sustainsys.Saml2.Configuration
                         // (of course we still decrypt with the current cert, but that's a different part of the code)
                         || (c.Status == CertificateStatus.Current && c.Use == CertificateUse.Encryption && !futureEncryptionCertExists)
                         || c.MetadataPublishOverride != MetadataPublishOverrideType.None
-                    )
-                    .Select(c => new ServiceCertificate
-                    {
-                        Use = c.Use,
-                        Status = c.Status,
-                        MetadataPublishOverride = c.MetadataPublishOverride,
-                        Certificate = c.Certificate
-                    }).ToList();
+                    ).ToList();
 
                 var futureBothCertExists = metaDataCertificates
                     .Any(c => c.Status == CertificateStatus.Future && c.Use == CertificateUse.Both);
@@ -344,12 +320,31 @@ namespace Sustainsys.Saml2.Configuration
             }
         }
 
-        private IEnumerable<ServiceCertificate> publishableServiceCertificates
+        private static CertificateUse ConvertUse(CertificateUse certificateUse)
+        {
+            var use = certificateUse & (CertificateUse.Signing | CertificateUse.Encryption);
+
+            if (use == (CertificateUse.Signing | CertificateUse.Encryption))
+            {
+                use = CertificateUse.Both;
+            }
+            return use;
+        }
+
+        private IEnumerable<ServiceCertificate> PublishableServiceCertificates
         {
             get
             {
                 return ServiceCertificates
-                    .Where(c => c.MetadataPublishOverride != MetadataPublishOverrideType.DoNotPublish);
+                    .Where(c => c.MetadataPublishOverride != MetadataPublishOverrideType.DoNotPublish
+                    && c.Use != CertificateUse.TlsClient) // Certs that are only Tls should not be published.
+                    .Select(c => new ServiceCertificate // Finally create new instances and convert use to ignore Tls.
+                    {
+                        Use = ConvertUse(c.Use),
+                        Status = c.Status,
+                        MetadataPublishOverride = c.MetadataPublishOverride,
+                        Certificate = c.Certificate
+                    });
             }
         }
 

@@ -21,7 +21,7 @@ namespace Sustainsys.Saml2.AspNetCore2
 
             if(commandResult.Location != null)
             {
-                httpContext.Response.Headers["Location"] = commandResult.Location.ToString();
+                httpContext.Response.Headers["Location"] = commandResult.Location.OriginalString;
             }
 
             if(!string.IsNullOrEmpty(commandResult.SetCookieName))
@@ -37,8 +37,14 @@ namespace Sustainsys.Saml2.AspNetCore2
                         HttpOnly = true,
                         // We are expecting a different site to POST back to us,
                         // so the ASP.Net Core default of Lax is not appropriate in this case
-                        SameSite = SameSiteMode.None
+                        SameSite = SameSiteMode.None,
+                        IsEssential = true
                     });
+            }
+
+            foreach(var h in commandResult.Headers)
+            {
+                httpContext.Response.Headers.Add(h.Key, h.Value);
             }
 
             if(!string.IsNullOrEmpty(commandResult.ClearCookieName))

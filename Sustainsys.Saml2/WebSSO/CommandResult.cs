@@ -1,8 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
-using System.IdentityModel.Services;
-using System.IdentityModel.Tokens;
 using System.Net;
 using System.Security.Claims;
 using System.Web;
@@ -107,5 +105,10 @@ namespace Sustainsys.Saml2.WebSso
         /// be applied by the Saml2 library to the response.
         /// </summary>
         public bool HandledResult { get; set; }
+
+        /// <summary>
+        /// Other headers that should be set on the response.
+        /// </summary>
+        public Dictionary<string, string> Headers { get; } = new Dictionary<string, string>();
     }
 }

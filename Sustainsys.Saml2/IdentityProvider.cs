@@ -3,11 +3,8 @@ using Sustainsys.Saml2.Configuration;
 using System;
 using System.Configuration;
 using System.Globalization;
-using System.IdentityModel.Metadata;
-using System.IdentityModel.Tokens;
 using System.Linq;
 using System.Security.Cryptography;
-using System.Security.Cryptography.Xml;
 using Sustainsys.Saml2.Internal;
 using Sustainsys.Saml2.Metadata;
 using Sustainsys.Saml2.Saml2P;
@@ -17,6 +14,7 @@ using System.Net;
 using System.Collections.Concurrent;
 using System.Security.Claims;
 using System.Diagnostics.CodeAnalysis;
+using Sustainsys.Saml2.Tokens;
 
 namespace Sustainsys.Saml2
 {
@@ -84,6 +82,8 @@ namespace Sustainsys.Saml2
             {
                 Validate();
             }
+
+            RelayStateUsedAsReturnUrl = config.RelayStateUsedAsReturnUrl;
         }
 
         private void Validate()
@@ -256,6 +256,12 @@ namespace Sustainsys.Saml2
         /// </summary>
         public bool AllowUnsolicitedAuthnResponse { get; set; }
 
+        /// <summary>
+        /// Does the RelayState contains the return url?, 
+        /// This setting is used only when the AllowUnsolicitedAuthnResponse setting is enabled.
+        /// </summary>
+        public bool RelayStateUsedAsReturnUrl { get; set; }
+
         private string metadataLocation;
 
         /// <summary>
@@ -388,7 +394,7 @@ namespace Sustainsys.Saml2
         /// IdentityProvider based on the metadata.
         /// </summary>
         /// <param name="metadata">Metadata to read.</param>
-        public void ReadMetadata(ExtendedEntityDescriptor metadata)
+        public void ReadMetadata(EntityDescriptor metadata)
         {
             if (metadata == null)
             {
@@ -411,12 +417,12 @@ namespace Sustainsys.Saml2
             }
         }
 
-        private void ReadMetadataIdpDescriptor(ExtendedEntityDescriptor metadata)
+        private void ReadMetadataIdpDescriptor(EntityDescriptor metadata)
         {
             var idpDescriptor = metadata.RoleDescriptors
-                .OfType<IdentityProviderSingleSignOnDescriptor>().Single();
+                .OfType<IdpSsoDescriptor>().Single();
 
-            WantAuthnRequestsSigned = idpDescriptor.WantAuthenticationRequestsSigned;
+            WantAuthnRequestsSigned = idpDescriptor.WantAuthnRequestsSigned ?? false;
 
             var ssoService = GetPreferredEndpoint(idpDescriptor.SingleSignOnServices);
             if (ssoService != null)
@@ -433,23 +439,26 @@ namespace Sustainsys.Saml2
                 singleLogoutServiceResponseUrl = sloService.ResponseLocation;
             }
 
-            foreach (var ars in idpDescriptor.ArtifactResolutionServices)
+            foreach (var kv in idpDescriptor.ArtifactResolutionServices)
             {
-                artifactResolutionServiceUrls[ars.Value.Index] = ars.Value.Location;
+				var ars = kv.Value;
+                artifactResolutionServiceUrls[ars.Index] = ars.Location;
             }
 
+			var arsKeys = idpDescriptor.ArtifactResolutionServices.ToLookup(x => x.Value.Index);
             foreach (var ars in artifactResolutionServiceUrls.Keys
-                .Where(k => !idpDescriptor.ArtifactResolutionServices.Keys.Contains(k)))
+                .Where(k => !arsKeys.Contains(k)))
             {
                 artifactResolutionServiceUrls.Remove(ars);
             }
 
             var keys = idpDescriptor.Keys.Where(k => k.Use == KeyType.Unspecified || k.Use == KeyType.Signing);
 
-            signingKeys.SetLoadedItems(keys.Select(k => k.KeyInfo.First(c => c.CanCreateKey)).ToList());
+            signingKeys.SetLoadedItems(keys.Select(k => k.KeyInfo
+				.MakeSecurityKeyIdentifier().First(c => c.CanCreateKey)).ToList());
         }
 
-        private static ProtocolEndpoint GetPreferredEndpoint(ICollection<ProtocolEndpoint> endpoints)
+        private static T GetPreferredEndpoint<T>(ICollection<T> endpoints) where T : Endpoint
         {
             // Prefer an endpoint with a redirect binding, then check for POST which 
             // is the other supported by Saml2.

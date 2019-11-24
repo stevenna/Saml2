@@ -1,19 +1,19 @@
-﻿using System;
+﻿using Microsoft.IdentityModel.Tokens.Saml2;
+using Microsoft.IdentityModel.Tokens;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.IdentityModel.Tokens;
 using System.Linq;
 using System.Security.Claims;
 using System.Security.Cryptography.X509Certificates;
 using System.Security.Cryptography.Xml;
 using System.Xml;
 using Sustainsys.Saml2.Configuration;
-using System.IdentityModel.Metadata;
 using System.Security.Cryptography;
-using System.IdentityModel.Services;
 using Sustainsys.Saml2.Internal;
 using Sustainsys.Saml2.Exceptions;
 using System.Diagnostics.CodeAnalysis;
+using Sustainsys.Saml2.Metadata;
 
 namespace Sustainsys.Saml2.Saml2P
 {
@@ -34,7 +34,7 @@ namespace Sustainsys.Saml2.Saml2P
         /// <exception cref="XmlException">On xml errors or unexpected xml structure.</exception>
         public static Saml2Response Read(string xml)
         {
-            return Read(xml, null);
+            return Read(xml, null, null);
         }
 
         /// <summary>
@@ -47,9 +47,23 @@ namespace Sustainsys.Saml2.Saml2P
         /// <exception cref="XmlException">On xml errors or unexpected xml structure.</exception>
         public static Saml2Response Read(string xml, Saml2Id expectedInResponseTo)
         {
+            return Read(xml, expectedInResponseTo, null);
+        }
+
+        /// <summary>
+        /// Read the supplied Xml and parse it into a response.
+        /// </summary>
+        /// <param name="xml">xml data.</param>
+        /// <param name="expectedInResponseTo">The expected value of the
+        /// InReplyTo parameter in the message.</param>
+        /// <param name="options">Service provider settings used when validating Saml response</param>
+        /// <returns>Saml2Response</returns>
+        /// <exception cref="XmlException">On xml errors or unexpected xml structure.</exception>
+        public static Saml2Response Read(string xml, Saml2Id expectedInResponseTo, IOptions options)
+        {
             var x = XmlHelpers.XmlDocumentFromString(xml);
 
-            return new Saml2Response(x.DocumentElement, expectedInResponseTo);
+            return new Saml2Response(x.DocumentElement, expectedInResponseTo, options);
         }
 
         /// <summary>
@@ -58,7 +72,19 @@ namespace Sustainsys.Saml2.Saml2P
         /// <param name="xml">Root xml element.</param>
         /// <param name="expectedInResponseTo">The expected value of the
         /// InReplyTo parameter in the message.</param>
-        public Saml2Response(XmlElement xml, Saml2Id expectedInResponseTo)
+        [ExcludeFromCodeCoverage] // Just a wrapper o keep backward compatibility
+        public Saml2Response(XmlElement xml, Saml2Id expectedInResponseTo): this(xml, expectedInResponseTo, null)
+        {
+        }
+
+        /// <summary>
+        /// Ctor
+        /// </summary>
+        /// <param name="xml">Root xml element.</param>
+        /// <param name="expectedInResponseTo">The expected value of the
+        /// InReplyTo parameter in the message.</param>
+        /// <param name="options">Service provider settings used when validating Saml response</param>
+        public Saml2Response(XmlElement xml, Saml2Id expectedInResponseTo, IOptions options)
         {
             if (xml == null)
             {
@@ -78,23 +104,24 @@ namespace Sustainsys.Saml2.Saml2P
 
             xmlElement = xml;
 
-            id = new Saml2Id(xml.Attributes["ID"].Value);
+            id = new Saml2Id(xml.GetRequiredAttributeValue("ID"));
 
-            ReadAndValidateInResponseTo(xml, expectedInResponseTo);
+            ReadAndValidateInResponseTo(xml, expectedInResponseTo, options);
 
-            issueInstant = DateTime.Parse(xml.Attributes["IssueInstant"].Value,
+            issueInstant = DateTime.Parse(xml.GetRequiredAttributeValue("IssueInstant"),
                 CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal);
 
-            var statusString = xml["Status", Saml2Namespaces.Saml2PName]
-                ["StatusCode", Saml2Namespaces.Saml2PName].Attributes["Value"].Value;
+            var statusElement = xml.GetRequiredElement("Status", Saml2Namespaces.Saml2PName);
+            var statusCodeElement = statusElement.GetRequiredElement("StatusCode", Saml2Namespaces.Saml2PName);
+            var statusString = statusCodeElement.GetRequiredAttributeValue("Value");
 
             status = StatusCodeHelper.FromString(statusString);
 
-            statusMessage = xml["Status", Saml2Namespaces.Saml2PName]
+            statusMessage = statusElement
                 ["StatusMessage", Saml2Namespaces.Saml2PName].GetTrimmedTextIfNotNull();
-            if (xml["Status", Saml2Namespaces.Saml2PName]["StatusCode", Saml2Namespaces.Saml2PName]["StatusCode", Saml2Namespaces.Saml2PName] != null)
+            if (statusCodeElement["StatusCode", Saml2Namespaces.Saml2PName] != null)
             {
-                secondLevelStatus = xml["Status", Saml2Namespaces.Saml2PName]["StatusCode", Saml2Namespaces.Saml2PName]["StatusCode", Saml2Namespaces.Saml2PName].Attributes["Value"].Value;
+                secondLevelStatus = statusCodeElement["StatusCode", Saml2Namespaces.Saml2PName].Attributes["Value"].Value;
             }
 
             Issuer = new EntityId(xmlElement["Issuer", Saml2Namespaces.Saml2Name].GetTrimmedTextIfNotNull());
@@ -112,9 +139,10 @@ namespace Sustainsys.Saml2.Saml2P
             }
         }
 
+        [SuppressMessage("Microsoft.Naming", "CA2204:Literals should be spelled correctly", MessageId = "IgnoreMissingInResponseTo")]
         [SuppressMessage("Microsoft.Naming", "CA2204:Literals should be spelled correctly", MessageId = "InResponseTo")]
         [SuppressMessage("Microsoft.Naming", "CA2204:Literals should be spelled correctly", MessageId = "RelayState")]
-        private void ReadAndValidateInResponseTo(XmlElement xml, Saml2Id expectedInResponseTo)
+        private void ReadAndValidateInResponseTo(XmlElement xml, Saml2Id expectedInResponseTo, IOptions options)
         {
             var parsedInResponseTo = xml.Attributes["InResponseTo"].GetValueIfNotNull();
             if (parsedInResponseTo != null)
@@ -127,24 +155,31 @@ namespace Sustainsys.Saml2.Saml2P
                         "Received message contains unexpected InResponseTo \"{0}\". No cookie preserving state " +
                         "from the request was found so the message was not expected to have an InResponseTo attribute. " +
                         "This error typically occurs if the cookie set when doing SP-initiated sign on have been lost.",
-                        InResponseTo));
+                        InResponseTo.Value));
                 }
-                if (!expectedInResponseTo.Equals(InResponseTo))
+                if (expectedInResponseTo.Value != InResponseTo.Value)
                 {
                     throw new Saml2ResponseFailedValidationException(
                         string.Format(CultureInfo.InvariantCulture,
                         "InResponseTo Id \"{0}\" in received response does not match Id \"{1}\" of the sent request.",
-                        InResponseTo, expectedInResponseTo));
+                        InResponseTo.Value, expectedInResponseTo.Value));
                 }
             }
             else
             {
+                if (options?.SPOptions.Compatibility.IgnoreMissingInResponseTo ?? false)
+                {
+                    return;
+                };
+
                 if (expectedInResponseTo != null)
                 {
                     throw new Saml2ResponseFailedValidationException(
                         string.Format(CultureInfo.InvariantCulture,
-                        "Expected message to contain InResponseTo \"{0}\", but found none.",
-                        expectedInResponseTo));
+                        "Expected message to contain InResponseTo \"{0}\", but found none. If this error occurs " +
+                        "due to the Idp not setting InResponseTo according to the SAML2 specification, this check " +
+                        "can be disabled by setting the IgnoreMissingInResponseTo compatibility flag to true.",
+                        expectedInResponseTo.Value));
                 }
             }
         }
@@ -428,19 +463,18 @@ namespace Sustainsys.Saml2.Saml2P
             return decryptionCertificates;
         }
 
-        private void Validate(IOptions options)
+        private void Validate(IOptions options, IdentityProvider idp)
         {
-            CheckIfUnsolicitedIsAllowed(options);
-            ValidateSignature(options);
+            CheckIfUnsolicitedIsAllowed(options, idp);
+            ValidateSignature(options, idp);
         }
 
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Naming", "CA2204:Literals should be spelled correctly", MessageId = "RelayState")]
 
-        private void CheckIfUnsolicitedIsAllowed(IOptions options)
+        private void CheckIfUnsolicitedIsAllowed(IOptions options, IdentityProvider idp)
         {
             if (InResponseTo == null)
             {
-                var idp = options.IdentityProviders[Issuer];
                 if (idp.AllowUnsolicitedAuthnResponse)
                 {
                     options.SPOptions.Logger.WriteVerbose("Received unsolicited Saml Response " + Id 
@@ -453,9 +487,9 @@ namespace Sustainsys.Saml2.Saml2P
             }
         }
 
-        private void ValidateSignature(IOptions options)
+        private void ValidateSignature(IOptions options, IdentityProvider idp)
         {
-            var idpKeys = options.IdentityProviders[Issuer].SigningKeys;
+            var idpKeys = idp.SigningKeys;
 
             var minAlgorithm = options.SPOptions.MinIncomingSigningAlgorithm;
 
@@ -482,10 +516,20 @@ namespace Sustainsys.Saml2.Saml2P
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Design", "CA1024:UsePropertiesWhereAppropriate")]
         public IEnumerable<ClaimsIdentity> GetClaims(IOptions options)
         {
-            if (options == null)
-            {
-                throw new ArgumentNullException(nameof(options));
-            }
+            return GetClaims(options, null);
+        }
+        
+        /// <summary>
+        /// Extract claims from the assertions contained in the response.
+        /// </summary>
+        /// <param name="options">Service provider settings used when processing the response into claims.</param>
+        /// <param name="relayData">Relay data stored when creating AuthnRequest, to be passed on to
+        /// GetIdentityProvider notification.</param>
+        /// <returns>ClaimsIdentities</returns>
+        // Method might throw expections so make it a method and not a property.
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Design", "CA1024:UsePropertiesWhereAppropriate")]
+        public IEnumerable<ClaimsIdentity> GetClaims(IOptions options, IDictionary<string, string> relayData)
+        {
             if (createClaimsException != null)
             {
                 throw createClaimsException;
@@ -495,7 +539,8 @@ namespace Sustainsys.Saml2.Saml2P
             {
                 try
                 {
-                    claimsIdentities = CreateClaims(options).ToList();
+                    var idp = options.Notifications.GetIdentityProvider(Issuer, relayData, options);
+                    claimsIdentities = CreateClaims(options, idp).ToList();
                 }
                 catch (Exception ex)
                 {
@@ -507,9 +552,9 @@ namespace Sustainsys.Saml2.Saml2P
             return claimsIdentities;
         }
 
-        private IEnumerable<ClaimsIdentity> CreateClaims(IOptions options)
+        private IEnumerable<ClaimsIdentity> CreateClaims(IOptions options, IdentityProvider idp)
         {
-            Validate(options);
+            Validate(options, idp);
 
             if (status != Saml2StatusCode.Success)
             {
@@ -518,34 +563,29 @@ namespace Sustainsys.Saml2.Saml2P
                     status, statusMessage, secondLevelStatus);
             }
 
-            foreach (XmlElement assertionNode in GetAllAssertionElementNodes(options))
+			TokenValidationParameters validationParameters = new TokenValidationParameters();
+			validationParameters.AuthenticationType = "Federation";
+			validationParameters.RequireSignedTokens = false;
+			validationParameters.ValidateIssuer = false;
+            validationParameters.ValidAudience = options.SPOptions.EntityId.Id;
+
+			var handler = options.SPOptions.Saml2PSecurityTokenHandler;
+
+			foreach (XmlElement assertionNode in GetAllAssertionElementNodes(options))
             {
-                using (var reader = new FilteringXmlNodeReader(SignedXml.XmlDsigNamespaceUrl, "Signature", assertionNode))
-                {
-                    var handler = options.SPOptions.Saml2PSecurityTokenHandler;
+				SecurityToken baseToken;
+                var principal = handler.ValidateToken(assertionNode.OuterXml, validationParameters, out baseToken);
+				var token = (Saml2SecurityToken)baseToken;
+                options.SPOptions.Logger.WriteVerbose("Extracted SAML assertion " + token.Id);
 
-                    var token = (Saml2SecurityToken)handler.ReadToken(reader);
-                    options.SPOptions.Logger.WriteVerbose("Extracted SAML assertion " + token.Id);
+				sessionNotOnOrAfter = DateTimeHelper.EarliestTime(sessionNotOnOrAfter,
+					token.Assertion.Statements.OfType<Saml2AuthenticationStatement>()
+						.SingleOrDefault()?.SessionNotOnOrAfter);
 
-                    handler.DetectReplayedToken(token);
-
-                    var validateAudience = options.SPOptions
-                        .Saml2PSecurityTokenHandler
-                        .SamlSecurityTokenRequirement
-                        .ShouldEnforceAudienceRestriction(options.SPOptions
-                        .SystemIdentityModelIdentityConfiguration
-                        .AudienceRestriction.AudienceMode, token);
-
-                    handler.ValidateConditions(token.Assertion.Conditions, validateAudience);
-
-                    options.SPOptions.Logger.WriteVerbose("Validated conditions for SAML2 Response " + Id);
-
-                    sessionNotOnOrAfter = DateTimeHelper.EarliestTime(sessionNotOnOrAfter,
-                    token.Assertion.Statements.OfType<Saml2AuthenticationStatement>()
-                        .SingleOrDefault()?.SessionNotOnOrAfter);
-
-                    yield return handler.CreateClaims(token);
-                }
+				foreach (var identity in principal.Identities)
+				{
+					yield return identity;
+				}
             }
         }
         

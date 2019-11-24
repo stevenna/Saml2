@@ -1,7 +1,6 @@
 ﻿using Sustainsys.Saml2.Configuration;
 using System;
 using System.Collections.Generic;
-using System.IdentityModel.Metadata;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -45,11 +44,25 @@ namespace Sustainsys.Saml2.WebSso
                 ContentType = "application/samlmetadata+xml"
             };
 
+            var fileName = CreateFileName(options.SPOptions.EntityId.Id);
+
+            result.Headers.Add("Content-Disposition", "attachment; filename=\"" + fileName + "\"");
+
             options.Notifications.MetadataCommandResultCreated(result);
 
             options.SPOptions.Logger.WriteInformation("Created metadata");
 
             return result;
+        }
+
+        private object CreateFileName(string id)
+        {
+            return id
+                .Replace("http://", "")
+                .Replace("https://", "")
+                .Replace(':', '.')
+                .Replace('/', '_')
+                + ".xml";
         }
     }
 }

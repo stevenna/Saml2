@@ -1,27 +1,26 @@
-﻿using System;
+﻿using FluentAssertions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using Sustainsys.Saml2.WebSso;
-using Sustainsys.Saml2.HttpModule;
-using FluentAssertions;
 using NSubstitute;
-using System.Web;
-using System.Net;
-using System.Web.Security;
-using System.Text;
+using Sustainsys.Saml2.HttpModule;
+using Sustainsys.Saml2.Metadata;
+using Sustainsys.Saml2.WebSso;
+using System;
+using System.Collections.Specialized;
 using System.Linq;
-using System.IdentityModel.Tokens;
-using System.IdentityModel.Metadata;
+using System.Net;
+using System.Web;
+using System.Web.Security;
 
 namespace Sustainsys.Saml2.HttpModule.Tests
 {
-    public partial class CommandResultHttpTests
+	public partial class CommandResultHttpTests
     {
         [TestMethod]
         public void CommandResultHttp_Apply_ChecksResponseNull()
         {
             Action a = () => new CommandResult().Apply(null);
 
-            a.ShouldThrow<ArgumentNullException>().And.ParamName.Should().Be("response");
+            a.Should().Throw<ArgumentNullException>().And.ParamName.Should().Be("response");
         }
 
         [TestMethod]
@@ -29,7 +28,7 @@ namespace Sustainsys.Saml2.HttpModule.Tests
         {
             CommandResult obj = null;
             Action a = () => obj.Apply(null);
-            a.ShouldThrow<ArgumentNullException>().And.ParamName.Should().Be("commandResult");
+            a.Should().Throw<ArgumentNullException>().And.ParamName.Should().Be("commandResult");
         }
 
         [TestMethod]
@@ -132,7 +131,7 @@ namespace Sustainsys.Saml2.HttpModule.Tests
                     HttpStatusCode = HttpStatusCode.SeeOther
                 }.Apply(response);
 
-            a.ShouldThrow<InvalidOperationException>();
+            a.Should().Throw<InvalidOperationException>();
         }
 
         [TestMethod]
@@ -146,7 +145,7 @@ namespace Sustainsys.Saml2.HttpModule.Tests
                     Location = new Uri("http://example.com")
                 }.Apply(response);
 
-            a.ShouldThrow<InvalidOperationException>();
+            a.Should().Throw<InvalidOperationException>();
         }
 
         [TestMethod]
@@ -166,5 +165,18 @@ namespace Sustainsys.Saml2.HttpModule.Tests
             response.Received().Write("Some Content!");
         }
 
+        [TestMethod]
+        public void CommandResultHttp_Apply_Headers()
+        {
+            var response = Substitute.For<HttpResponseBase>();
+
+            var commandResult = new CommandResult();
+
+            commandResult.Headers.Add("header", "value");
+
+            commandResult.Apply(response);
+
+            response.Received().AddHeader("header", "value");
+        }
     }
 }

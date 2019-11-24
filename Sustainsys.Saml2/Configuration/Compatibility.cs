@@ -32,6 +32,7 @@ namespace Sustainsys.Saml2.Configuration
             UnpackEntitiesDescriptorInIdentityProviderMetadata =
                 configElement.UnpackEntitiesDescriptorInIdentityProviderMetadata;
             DisableLogoutStateCookie = configElement.DisableLogoutStateCookie;
+            IgnoreMissingInResponseTo = configElement.IgnoreMissingInResponseTo;
         }
 
         /// <summary>
@@ -58,9 +59,17 @@ namespace Sustainsys.Saml2.Configuration
         /// <summary>
         /// Do not read the AuthnContext element in Saml2Response.
         /// If you do not need these values to be present as claims in the generated
-        /// identity, using this option can prevent XML format errors (ID0013)
+        /// identity, using this option can prevent XML format errors (IDX13102)
         /// e.g. when value cannot parse as absolute URI
         /// </summary>
         public bool IgnoreAuthenticationContextInResponse { get; set; }
+
+        /// <summary>
+        /// Ignore the check for the missing InResponseTo attribute in the Saml response.
+        /// This is different to setting the allowUnsolicitedAuthnResponse as it will only
+        /// ignore the InResponseTo attribute if there is no relayState. Setting
+        /// IgnoreMissingInResponseTo to true will always skip the check.
+        /// </summary>
+        public bool IgnoreMissingInResponseTo { get; set; }
     }
 }
